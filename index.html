@@ -1,1 +1,159 @@
-
+<!DOCTYPE html>
+<html lang="kk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Қара құрдым — Жердің спагеттификациясы</title>
+<style>
+:root{--bg:#000;--fg:#efe6d6;--dim:#a99d88;--card:rgba(10,8,6,.55);box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#000;--fg:#efe6d6;--dim:#a99d88;--card:rgba(10,8,6,.55)}}
+:root[data-theme="dark"]{--bg:#000;--fg:#efe6d6;--dim:#a99d88;--card:rgba(10,8,6,.55)}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overflow:hidden}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+canvas{position:fixed;inset:0;width:100%;height:100%;touch-action:none;display:block}
+.hud{position:fixed;left:12px;right:12px;display:flex;justify-content:space-between;align-items:flex-start;gap:8px;pointer-events:none}
+.top{top:calc(env(safe-area-inset-top,0px) + 10px)}
+.bot{bottom:calc(env(safe-area-inset-bottom,0px) + 10px);align-items:flex-end}
+.box{background:var(--card);backdrop-filter:blur(6px);border-radius:10px;padding:8px 11px;font-size:13px;line-height:1.45}
+.box b{font-weight:600}.dim{color:var(--dim);font-size:12px}
+button{pointer-events:auto;background:var(--card);color:var(--fg);border:1px solid #6b5d46;border-radius:10px;padding:10px 14px;font-size:14px;backdrop-filter:blur(6px)}
+#err{position:fixed;inset:0;display:none;align-items:center;justify-content:center;padding:24px;text-align:center}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="hud top"><div class="box"><b>Қара құрдым</b> · Шварцшильд<br><span class="dim">Көру бұрышын өзгерту үшін сүйреңіз</span></div>
+<div class="box" id="ro">—</div></div>
+<div class="hud bot"><div class="box dim" id="st">Жер құлап жатыр…</div><button id="rs">↻ Қайта</button></div>
+<div id="err"></div>
+<script>
+const VS=`attribute vec2 a;void main(){gl_Position=vec4(a,0.,1.);}`;
+const FS=`precision highp float;
+uniform vec2 uRes;uniform float uTime,uS,uSpin,uVis,uHeat;
+uniform vec3 uCam,uF,uR,uU,uE;
+const float R0=.5,ROUT=10.,PI=3.14159265;
+float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+float ss(float a,float b,float x){float t=clamp((x-a)/(b-a),0.,1.);return t*t*(3.-2.*t);}
+vec3 acc(vec3 p,float h2){float r2=dot(p,p);return -1.5*h2*p/(r2*r2*sqrt(r2));}
+vec3 stars(vec3 d){
+  vec2 c=floor(vec2((atan(d.z,d.x)+PI)/(2.*PI)*1800.,acos(clamp(d.y,-1.,1.))/PI*900.));
+  float r=hash(c);float b=pow(clamp((r-.995)/.005,0.,1.),3.)*1.3;
+  float t=hash(c+7.3);return b*vec3(.8+.2*t,.85,1.1-.4*t);}
+vec3 disk(vec3 pc,float rc,vec3 vt){
+  float phi=atan(pc.z,pc.x);
+  float om=sqrt(.5/(rc*pow(max(rc-1.,.001),2.)));phi-=om*uTime;
+  float beta=min(sqrt(.5/max(rc-1.,.001)),.9);float gam=inversesqrt(1.-beta*beta);
+  vec3 tg=vec3(-pc.z,0.,pc.x)/rc;vec3 n=-normalize(vt);
+  float dop=1./(gam*(1.-beta*dot(tg,n)));
+  float g=dop*sqrt(max(1.-1./rc,1e-4));
+  float x=3./rc;float fl=x*x*(1.-sqrt(x))/.08192;
+  float ps=phi+2.5*log(rc);
+  float tex=1.+.25*sin(3.*ps)+.2*sin(7.*ps+2.*rc)+.12*sin(17.*rc)+.1*sin(31.*rc+5.*phi);
+  tex=max(tex,.25);
+  float edge=clamp((rc-3.)/.25,0.,1.)*clamp((ROUT-rc)/2.,0.,1.);
+  float t=clamp(g*pow(fl,.25),0.,2.);
+  vec3 c=min(vec3(1.,.35+.4*t,.1+.35*t*t),1.);
+  return c*fl*tex*edge*pow(g,4.);}
+vec3 earth(vec3 q,vec3 n,vec3 view,float gf){
+  float cs=cos(uSpin),sn=sin(uSpin);
+  float x=q.x*cs-q.z*sn,y=q.y,z=q.x*sn+q.z*cs;
+  float ln=sin(3.1*x+1.3)*sin(2.7*y+.5)*sin(3.7*z+2.1)+.6*sin(5.3*x+2.*z)*sin(4.1*y+1.5*x)+.35*sin(9.1*z+3.*y+1.)*sin(8.3*x-2.*y);
+  float land=ss(.1,.2,ln);float dry=ss(-.3,.5,sin(7.*x+3.*z)*sin(5.*y));
+  vec3 b=mix(vec3(.03,.15,.55),mix(vec3(.12,.42,.12),vec3(.5,.38,.18),dry),land);
+  b=mix(b,vec3(1.),ss(.82,.9,abs(y)));
+  float cl=.5+.5*(sin(6.*x+2.*y)*sin(5.*z-3.*y)+.5*sin(11.*y+3.*x));
+  b=mix(b,vec3(1.),.8*ss(.55,.9,cl));
+  float lam=max(dot(n,normalize(vec3(-.4,.5,-.8))),0.);
+  vec3 c=b*(.1+.95*lam)*2.2;
+  float rim=pow(1.-clamp(dot(n,view),0.,1.),3.);
+  c+=vec3(.25,.5,1.)*rim*(.25+lam)*1.4;
+  c=c*(1.-.6*uHeat)+uHeat*vec3(1.,.45,.12)*3.;
+  return c*gf;}
+void main(){
+  float asp=uRes.x/uRes.y;float th=.3*max(1.,1.3/asp);
+  vec2 uv=(gl_FragCoord.xy*2.-uRes)/uRes.y;
+  vec3 v=normalize(uF+uv.x*th*uR+uv.y*th*uU);vec3 p=uCam;
+  vec3 cr=cross(p,v);float h2=dot(cr,cr);
+  vec3 col=vec3(0.);
+  vec3 rh=normalize(uE);float at=inversesqrt(uS);float rb=R0*max(uS,1.);
+  for(int i=0;i<260;i++){
+    float r=length(p);float dt=.06*r+.01;
+    vec3 a1=acc(p,h2);vec3 pm=p+.5*dt*v;vec3 vm=v+.5*dt*a1;
+    vec3 vn=v+dt*acc(pm,h2);vec3 pn=p+dt*vm;
+    if(p.y*pn.y<0.){
+      float t=p.y/(p.y-pn.y);vec3 pc=mix(p,pn,t);float rc=length(pc.xz);
+      if(rc>3.&&rc<ROUT)col+=disk(pc,rc,vn);}
+    if(uVis>.5&&length(p-uE)<rb+length(pn-p)){
+      vec3 w0=p-uE,w1=pn-uE;
+      vec3 a0=(w0/at+(1./uS-1./at)*dot(w0,rh)*rh)/R0;
+      vec3 a1b=(w1/at+(1./uS-1./at)*dot(w1,rh)*rh)/R0;
+      vec3 dd=a1b-a0;float A=dot(dd,dd),B=dot(a0,dd),C=dot(a0,a0)-1.;
+      float disc=B*B-A*C;
+      if(disc>0.&&A>1e-9){
+        float t=(-B-sqrt(disc))/A;
+        if(t>=0.&&t<=1.){
+          vec3 xh=mix(p,pn,t);float rr=length(xh);
+          if(rr>1.){
+            vec3 w=xh-uE;vec3 q=normalize((w/at+(1./uS-1./at)*dot(w,rh)*rh)/R0);
+            vec3 nr=normalize(q/at+(1./uS-1./at)*dot(q,rh)*rh);
+            col+=earth(q,nr,-normalize(vn),sqrt(1.-1./rr));
+            break;}}}}
+    p=pn;v=vn;float rn=length(p);
+    if(rn<1.)break;
+    if(rn>60.&&dot(p,v)>0.){col+=stars(normalize(v));break;}
+  }
+  col=1.-exp(-.6*col);
+  gl_FragColor=vec4(pow(col,vec3(1./2.2)),1.);}`;
+const cv=document.getElementById('c');
+const gl=cv.getContext('webgl')||cv.getContext('experimental-webgl');
+function fail(m){const e=document.getElementById('err');e.style.display='flex';e.textContent=m}
+if(!gl)fail('WebGL қолдауы жоқ — басқа браузермен ашып көріңіз.');
+else{
+const sh=(t,s)=>{const o=gl.createShader(t);gl.shaderSource(o,s);gl.compileShader(o);
+  if(!gl.getShaderParameter(o,gl.COMPILE_STATUS))fail(gl.getShaderInfoLog(o));return o};
+const pr=gl.createProgram();gl.attachShader(pr,sh(gl.VERTEX_SHADER,VS));gl.attachShader(pr,sh(gl.FRAGMENT_SHADER,FS));
+gl.linkProgram(pr);gl.useProgram(pr);
+const buf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);
+const loc=gl.getAttribLocation(pr,'a');gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0);
+const U={};['uRes','uTime','uS','uSpin','uVis','uHeat','uCam','uF','uR','uU','uE'].forEach(n=>U[n]=gl.getUniformLocation(pr,n));
+function resize(){const s=Math.min(window.devicePixelRatio||1,1.5);let w=innerWidth*s,h=innerHeight*s;
+  const k=Math.min(1,Math.sqrt(520000/(w*h)));cv.width=Math.max(2,w*k|0);cv.height=Math.max(2,h*k|0);gl.viewport(0,0,cv.width,cv.height)}
+addEventListener('resize',resize);resize();
+// камера: theta — диск нормалінен, phi — азимут
+let th=80*Math.PI/180,ph=0,drag=null;
+cv.addEventListener('pointerdown',e=>{drag=[e.clientX,e.clientY];cv.setPointerCapture(e.pointerId)});
+cv.addEventListener('pointerup',()=>drag=null);
+cv.addEventListener('pointermove',e=>{if(!drag)return;
+  ph=Math.max(-.7,Math.min(.7,ph+(e.clientX-drag[0])*.005));
+  th=Math.max(.9,Math.min(1.553,th+(e.clientY-drag[1])*.005));drag=[e.clientX,e.clientY]});
+const nrm=v=>{const l=Math.hypot(...v);return v.map(x=>x/l)};
+const crs=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
+// Жердің құлауы (радиал, бақылаушыға жанай: көрінетін өлшемі өзгермейді)
+const GM=.5,K=4;let r,vr,T,state,endAt;
+function reset(){r=9;vr=0;T=0;state=0;document.getElementById('st').textContent='Жер құлап жатыр…'}
+reset();document.getElementById('rs').onclick=reset;
+const ro=document.getElementById('ro');let last=performance.now();
+function frame(now){
+  let dt=Math.min((now-last)/1000,.05);last=now;
+  if(state===0){const n=Math.max(1,Math.ceil(dt*K/.01)),h=dt*K/n;
+    for(let i=0;i<n;i++){const a=-GM/Math.pow(r-1,2);vr+=a*h;r+=vr*h;
+      if(r<1.04){state=1;endAt=now+3500;document.getElementById('st').textContent='Жер горизонттан өтті. Қайтып шықпайды.';break}}}
+  else if(now>endAt)reset();
+  T+=dt*K;
+  const s=state===0?Math.min(1+25/Math.pow(r,3),18):1;
+  const heat=state===0?Math.max(0,Math.min(1,(s-1.3)/4)):0;
+  const cam=[30*Math.sin(th)*Math.sin(ph),30*Math.cos(th),-30*Math.sin(th)*Math.cos(ph)];
+  const f=nrm(cam.map(x=>-x)),R=nrm(crs(f,[0,1,0])),Uu=crs(R,f);
+  gl.uniform2f(U.uRes,cv.width,cv.height);gl.uniform1f(U.uTime,T);gl.uniform1f(U.uS,s);
+  gl.uniform1f(U.uSpin,.12*T);gl.uniform1f(U.uVis,state===0?1:0);gl.uniform1f(U.uHeat,heat);
+  gl.uniform3fv(U.uCam,cam);gl.uniform3fv(U.uF,f);gl.uniform3fv(U.uR,R);gl.uniform3fv(U.uU,Uu);
+  gl.uniform3f(U.uE,Math.max(r,1),0,0);
+  gl.drawArrays(gl.TRIANGLES,0,3);
+  ro.innerHTML=state===0?`r = <b>${r.toFixed(2)}</b> rs<br>созылу ×<b>${s.toFixed(1)}</b>`:'r &lt; 1 rs';
+  requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+}
+</script>
+</body>
+</html>
